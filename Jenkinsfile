@@ -57,6 +57,14 @@ pipeline {
                       name: "volume-0"
                       readOnly: false
                     workingDir: "/home/jenkins/agent"
+                  - name: jnlp
+                    resources:
+                      limits:
+                        cpu: 400m
+                        memory: 1024Mi
+                      requests:
+                        cpu: 100m
+                        memory: 256Mi
                   hostNetwork: false
                   nodeSelector:
                     kubernetes.io/os: linux
