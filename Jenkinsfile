@@ -115,7 +115,7 @@ pipeline {
                             env.DOCKER_TAG = dockerTag
                             def pipelineName = env.JOB_NAME.tokenize('/')[1] // use repo name as image name in container registry
                             env.DOCKER_IMAGE = env.GHCR_NAME + pipelineName
-                            sh 'echo ${GHCR_TOKEN} | docker login ghcr.io -u kmontocam --pasword-stdin'
+                            sh 'echo ${GHCR_TOKEN} | docker login ghcr.io -u kmontocam --password-stdin'
                             if (env.BRANCH_NAME == 'main') { // pull image to mantain same sha256
                                 sh 'docker pull ${DOCKER_IMAGE}:${HEAD_GIT_TAG}'
                             } else {
