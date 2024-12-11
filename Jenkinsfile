@@ -146,7 +146,7 @@ pipeline {
                     withCredentials([ string(credentialsId: 'd2ebee8c-fe21-4ca9-a935-a2b70c336b5b', variable: 'GHCR_TOKEN') ]) {
                         script {
                             sh '''
-                                echo ${GHCR_TOKEN} | docker login ghcr.io -u kmontocam --pasword-stdin
+                                echo ${GHCR_TOKEN} | docker login ghcr.io -u kmontocam --password-stdin
                                 docker push ${DOCKER_IMAGE}:${HEAD_GIT_TAG}
                                 docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                                 '''
