@@ -20,7 +20,13 @@ pipeline {
                     image: "docker:27.1.1-dind"
                     imagePullPolicy: "IfNotPresent"
                     name: "docker"
-                    resources: {}
+                    resources:
+                      limits:
+                        cpu: 1
+                        memory: 1500Mi
+                      requests:
+                        cpu: 500m
+                        memory: 750Mi
                     securityContext:
                       privileged: true
                     tty: true
@@ -36,7 +42,13 @@ pipeline {
                     image: "ghcr.io/kmontocam/rust/sqlx-cli-ssl:1.82-bookworm"
                     imagePullPolicy: "Always"
                     name: "sqlx"
-                    resources: {}
+                    resources:
+                      limits:
+                        cpu: 1
+                        memory: 1500Mi
+                      requests:
+                        cpu: 500m
+                        memory: 750Mi
                     securityContext:
                       privileged: true
                     tty: false
