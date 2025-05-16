@@ -13,17 +13,30 @@ use std::str::FromStr;
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{info, Span};
+use tracing::{error, info, Span};
 
 use axum::{
     extract::Path,
     http::header::{HeaderMap, SET_COOKIE},
+    http::StatusCode,
     response::{AppendHeaders, IntoResponse},
     routing::{get, post},
     Router,
 };
 
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let _ = sqlx::query!("SELECT 1 AS ignore")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| {
+            error!("{}", e);
+            return (StatusCode::SERVICE_UNAVAILABLE, "unhealthy");
+        });
+
+    return "ok";
+}
 
 /// Hook to trigger a language switch in the document
 async fn trigger_language_switch(Path(code): Path<String>) -> impl IntoResponse {
@@ -89,6 +102,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let state = AppState { pool };
 
     let app = Router::new()
+        .route("/health", get(health_check))
         .route("/language/:code", post(trigger_language_switch))
         .route("/language", get(language_switch))
         .layer(

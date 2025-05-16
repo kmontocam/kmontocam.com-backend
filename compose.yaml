@@ -1,27 +1,79 @@
+networks:
+  kmontocam:
+    driver: bridge
 services:
-  postgres:
-    platform: linux/amd64
-    image: postgres:16.4-bookworm
-    container_name: postgres
+  fluentbit:
+    container_name: fluentbit
+    image: fluent/fluent-bit:4.0.2-debug
+    networks:
+      - kmontocam
+    ports:
+      - 24224:24224
+      - 24224:24224/udp
     volumes:
-      - ./postgres/data:/var/lib/postgresql/data
-      - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf
+  kmontocam-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: axum
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    healthcheck:
+      interval: 10s
+      retries: 5
+      test:
+        - CMD-SHELL
+        - 'bash -c ''exec 3<>/dev/tcp/127.0.0.1/3000; echo -e "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3'''
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        tag: kmontocam-backend
+    networks:
+      - kmontocam
+    platform: linux/amd64
+  nginx:
+    container_name: nginx
+    depends_on:
+      kmontocam-backend:
+        condition: service_healthy
+    image: nginx:1.27.5-bookworm
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        tag: nginx
+    networks:
+      - kmontocam
+    platform: linux/amd64
+    ports:
+      - 3000:80
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  postgres:
+    container_name: postgres
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=kmontocam
-
-    ports:
-      - 5432:5432
+    healthcheck:
+      interval: 10s
+      retries: 5
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres
+      timeout: 10s
+    image: postgres:16.4-bookworm
     networks:
       - kmontocam
-
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
-networks:
-  kmontocam:
-    driver: bridge
+    platform: linux/amd64
+    ports:
+      - 5432:5432
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d

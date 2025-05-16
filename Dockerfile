@@ -19,6 +19,7 @@ WORKDIR /tmp
 COPY Cargo.toml Cargo.lock ./
 COPY build.rs build.rs
 COPY migrations migrations
+# NOTE: dir needs to exist locally, run `cargo sqlx prepare` with database service up
 COPY .sqlx .sqlx
 COPY src src
 COPY --from=cache /tmp/target target
