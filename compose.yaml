@@ -1,0 +1,27 @@
+services:
+  postgres:
+    platform: linux/amd64
+    image: postgres:16.4-bookworm
+    container_name: postgres
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=kmontocam
+
+    ports:
+      - 5432:5432
+    networks:
+      - kmontocam
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+networks:
+  kmontocam:
+    driver: bridge
