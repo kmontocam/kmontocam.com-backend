@@ -4,6 +4,9 @@ networks:
 services:
   fluentbit:
     container_name: fluentbit
+    depends_on:
+      postgres:
+        condition: service_healthy
     image: fluent/fluent-bit:4.0.2-debug
     networks:
       - kmontocam
@@ -24,8 +27,6 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
     healthcheck:
-      interval: 10s
-      retries: 5
       test:
         - CMD-SHELL
         - 'bash -c ''exec 3<>/dev/tcp/127.0.0.1/3000; echo -e "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3'''
@@ -47,7 +48,7 @@ services:
       driver: fluentd
       options:
         fluentd-address: 127.0.0.1:24224
-        tag: nginx
+        tag: ingress-nginx # mimic kubernetes tag
     networks:
       - kmontocam
     platform: linux/amd64
