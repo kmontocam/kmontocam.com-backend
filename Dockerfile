@@ -28,11 +28,11 @@ RUN cargo build --release
 
 
 FROM debian:bookworm
-WORKDIR /usr/bin
+WORKDIR /opt/
 RUN apt update
 RUN apt install -y libssl-dev ca-certificates
 COPY migrations migrations
 COPY templates templates
 COPY --from=builder /tmp/target/release/kmontocam-backend .
 EXPOSE 3000
-CMD ["/usr/bin/kmontocam-backend"]
+CMD ["/opt/kmontocam-backend"]
