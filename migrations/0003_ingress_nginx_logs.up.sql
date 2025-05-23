@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS log.ingress_nginx (
   proxy_alternative_upstream_name TEXT
 );
 
-CREATE OR REPLACE FUNCTION log.nginx_log_schema () RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION log.ingress_nginx_log_schema () RETURNS TRIGGER AS $$
 DECLARE
   data JSONB;
 BEGIN
@@ -97,11 +97,32 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_trigger
-        WHERE tgname = 'insert_nginx_log'
+        WHERE tgname = 'insert_ingress_nginx_log'
     ) THEN
-      CREATE TRIGGER insert_nginx_log
+      CREATE TRIGGER insert_ingress_nginx_log
       AFTER INSERT ON public.fluentbit FOR EACH ROW
-      EXECUTE FUNCTION log.nginx_log_schema ();
+      EXECUTE FUNCTION log.ingress_nginx_log_schema ();
+    END IF;
+END
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION log.notify_ingress_nginx_log () RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM pg_notify('ingress_nginx_log', row_to_json(NEW)::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'notify_ingress_nginx_log'
+    ) THEN
+      CREATE TRIGGER notify_ingress_nginx_log
+      AFTER INSERT ON log.ingress_nginx FOR EACH ROW
+      EXECUTE FUNCTION log.notify_ingress_nginx_log ();
     END IF;
 END
 $$ LANGUAGE plpgsql;

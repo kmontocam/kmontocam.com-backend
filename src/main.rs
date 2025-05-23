@@ -40,7 +40,7 @@ struct AppState {
 
 #[allow(dead_code)]
 #[derive(Deserialize, Serialize)]
-struct NginxLog {
+struct IngressNginxLog {
     ts: String,
     host: String,
     path: String,
@@ -117,13 +117,13 @@ async fn language_switch(
     return Html(switch.content);
 }
 
-async fn stream_nginx_logs(State(state): State<AppState>, mut stream: WebSocket) {
+async fn stream_ingress_nginx_logs(State(state): State<AppState>, mut stream: WebSocket) {
     let mut listener = state.listener.lock().await;
 
     // TODO: add html box to the page to display the logs
     // Allow notification listening for multiple ws clients
     let _ = listener
-        .listen("nginx_log")
+        .listen("ingress_nginx_log")
         .await
         .map_err(|e| stream.send(Message::Text(e.to_string())));
 
@@ -132,7 +132,7 @@ async fn stream_nginx_logs(State(state): State<AppState>, mut stream: WebSocket)
         let notification = listener.recv().await.unwrap();
 
         let message = notification.payload().to_string();
-        let log: NginxLog = serde_json::from_str(&message).unwrap();
+        let log: IngressNginxLog = serde_json::from_str(&message).unwrap();
 
         let html = state
             .tera
@@ -178,9 +178,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/language/:code", post(trigger_language_switch))
         .route("/language", get(language_switch))
         .route(
-            "/logs/nginx/ws",
+            "/logs/ingress-nginx/ws",
             any(|ws: WebSocketUpgrade, state: State<AppState>| async {
-                ws.on_upgrade(|socket| stream_nginx_logs(state, socket))
+                ws.on_upgrade(|socket| stream_ingress_nginx_logs(state, socket))
             }),
         )
         .layer(
