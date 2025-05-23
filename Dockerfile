@@ -32,6 +32,7 @@ WORKDIR /usr/bin
 RUN apt update
 RUN apt install -y libssl-dev ca-certificates
 COPY migrations migrations
+COPY templates templates
 COPY --from=builder /tmp/target/release/kmontocam-backend .
 EXPOSE 3000
 CMD ["/usr/bin/kmontocam-backend"]

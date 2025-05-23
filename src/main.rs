@@ -1,30 +1,69 @@
 mod postgres;
 use crate::postgres::models::home::LanguageSwitch;
 use axum::body::Body;
+use axum::extract::ws::Message;
 use axum::extract::State;
 use axum::http::HeaderValue;
 use http::{Request, Response};
 use postgres::models::home::LanguageCode;
-use sqlx::postgres::PgPoolOptions;
+use serde::{Deserialize, Serialize};
+use sqlx::postgres::{PgListener, PgPoolOptions};
 use sqlx::{Pool, Postgres};
 use std::env;
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
+use tera::{Context, Tera};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info, Span};
 
 use axum::{
+    extract::ws::{WebSocket, WebSocketUpgrade},
     extract::Path,
     http::header::{HeaderMap, SET_COOKIE},
     http::StatusCode,
-    response::{AppendHeaders, IntoResponse},
-    routing::{get, post},
+    response::{AppendHeaders, Html, IntoResponse},
+    routing::{any, get, post},
     Router,
 };
 
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+
+#[derive(Clone)]
+struct AppState {
+    pool: Pool<Postgres>,
+    tera: Tera,
+    listener: Arc<tokio::sync::Mutex<PgListener>>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Serialize)]
+struct NginxLog {
+    ts: String,
+    host: String,
+    path: String,
+    method: String,
+    status: u16,
+    bytes_sent: u64,
+    request_id: String,
+    remote_addr: String,
+    request_time: f64,
+    http_referrer: Option<String>,
+    request_proto: String,
+    request_query: Option<String>,
+    upstream_addr: String,
+    request_length: u64,
+    http_user_agent: String,
+    x_forwarded_for: String,
+    proxy_protocol_addr: Option<String>,
+    proxy_upstream_name: String,
+    upstream_status: u16,
+    upstream_response_time: f64,
+    upstream_response_length: u64,
+    proxy_alternative_upstream_name: Option<String>,
+}
 
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let _ = sqlx::query!("SELECT 1 AS ignore")
@@ -51,7 +90,7 @@ async fn language_switch(
     State(state): State<AppState>,
     jar: CookieJar,
     headers: HeaderMap,
-) -> String {
+) -> Html<String> {
     let desired_language: String = jar
         .get("LANG")
         .unwrap_or(&Cookie::new("LANG", "en"))
@@ -75,12 +114,37 @@ async fn language_switch(
     .await
     .unwrap_or_default();
 
-    return switch.content;
+    return Html(switch.content);
 }
 
-#[derive(Clone)]
-struct AppState {
-    pool: Pool<Postgres>,
+async fn stream_nginx_logs(State(state): State<AppState>, mut stream: WebSocket) {
+    let mut listener = state.listener.lock().await;
+
+    // TODO: add html box to the page to display the logs
+    // Allow notification listening for multiple ws clients
+    let _ = listener
+        .listen("nginx_log")
+        .await
+        .map_err(|e| stream.send(Message::Text(e.to_string())));
+
+    loop {
+        // TODO: define default message for stream on failure
+        let notification = listener.recv().await.unwrap();
+
+        let message = notification.payload().to_string();
+        let log: NginxLog = serde_json::from_str(&message).unwrap();
+
+        let html = state
+            .tera
+            .render(
+                "live/ingress-nginx.html",
+                &Context::from_serialize(&log).unwrap(),
+            )
+            .unwrap();
+
+        // TODO: handle client disconnect
+        let _ = stream.send(Message::Text(html)).await.unwrap();
+    }
 }
 
 #[tokio::main]
@@ -99,12 +163,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = AppState { pool };
+    let listener = PgListener::connect_with(&pool).await?;
+
+    let tera = Tera::new("templates/**/*.html")?;
+
+    let state = AppState {
+        pool,
+        tera,
+        listener: Arc::new(tokio::sync::Mutex::new(listener)),
+    };
 
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/language/:code", post(trigger_language_switch))
         .route("/language", get(language_switch))
+        .route(
+            "/logs/nginx/ws",
+            any(|ws: WebSocketUpgrade, state: State<AppState>| async {
+                ws.on_upgrade(|socket| stream_nginx_logs(state, socket))
+            }),
+        )
         .layer(
             ServiceBuilder::new().layer(
                 TraceLayer::new_for_http()
