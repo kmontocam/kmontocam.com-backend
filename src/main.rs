@@ -12,7 +12,6 @@ use sqlx::{Pool, Postgres};
 use std::env;
 use std::error::Error;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 use tera::{Context, Tera};
 use tower::ServiceBuilder;
@@ -35,7 +34,6 @@ use axum_extra::extract::cookie::{Cookie, CookieJar};
 struct AppState {
     pool: Pool<Postgres>,
     tera: Tera,
-    listener: Arc<tokio::sync::Mutex<PgListener>>,
 }
 
 #[allow(dead_code)]
@@ -118,10 +116,10 @@ async fn language_switch(
 }
 
 async fn stream_ingress_nginx_logs(State(state): State<AppState>, mut stream: WebSocket) {
-    let mut listener = state.listener.lock().await;
+    // TODO: handle maximum number of connections
+    let mut listener = PgListener::connect_with(&state.pool).await.unwrap();
 
     // TODO: add html box to the page to display the logs
-    // Allow notification listening for multiple ws clients
     let _ = listener
         .listen("ingress_nginx_log")
         .await
@@ -157,21 +155,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let pool = PgPoolOptions::new()
-        .max_connections(4)
+        .max_connections(32)
         .connect(&env::var("DATABASE_URL").expect("expected DATABASE_URL environment variable"))
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let listener = PgListener::connect_with(&pool).await?;
-
     let tera = Tera::new("templates/**/*.html")?;
 
-    let state = AppState {
-        pool,
-        tera,
-        listener: Arc::new(tokio::sync::Mutex::new(listener)),
-    };
+    let state = AppState { pool, tera };
 
     let app = Router::new()
         .route("/health", get(health_check))
